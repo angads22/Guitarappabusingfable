@@ -1,0 +1,79 @@
+name: Build executables
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+
+jobs:
+  build:
+    name: Build (${{ matrix.artifact }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: fretmap-windows
+            binary: dist/fretmap.exe
+            release_name: fretmap-windows.exe
+          - os: macos-latest
+            artifact: fretmap-macos
+            binary: dist/fretmap
+            release_name: fretmap-macos
+          - os: ubuntu-latest
+            artifact: fretmap-linux
+            binary: dist/fretmap
+            release_name: fretmap-linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install . pyinstaller pytest
+
+      - name: Test
+        run: python -m pytest tests -q
+
+      - name: Build single-file executable
+        run: pyinstaller --onefile --name fretmap --collect-all soundfile --console fretmap/__main__.py
+
+      - name: Smoke test binary
+        shell: bash
+        run: |
+          "${{ matrix.binary }}" --help
+          python examples/make_demo.py demo
+          "${{ matrix.binary }}" demo/rhythm.wav --events
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.binary }}
+
+  release:
+    name: Attach binaries to release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Rename binaries per platform
+        run: |
+          mkdir release
+          cp artifacts/fretmap-windows/fretmap.exe release/fretmap-windows.exe
+          cp artifacts/fretmap-macos/fretmap release/fretmap-macos
+          cp artifacts/fretmap-linux/fretmap release/fretmap-linux
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true

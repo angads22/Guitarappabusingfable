@@ -40,7 +40,20 @@ E o|---|---|-G-|---|
     1   2   3   4
 ```
 
-## Installation
+## Download (no Python needed)
+
+Every push builds standalone single-file executables for **Windows, macOS
+and Linux** via GitHub Actions (`Build executables` workflow). Grab
+`fretmap-windows` / `fretmap-macos` / `fretmap-linux` from the workflow run's
+**Artifacts** section (or from a Release for tagged versions), then either:
+
+- double-click it and type/paste the path to your audio file when asked,
+- drag an audio file onto `fretmap.exe`, or
+- run it from a terminal: `fretmap.exe mytrack.wav`
+
+On macOS/Linux make it executable first: `chmod +x fretmap-macos`.
+
+## Installation (from source)
 
 ```bash
 pip install -e .          # runtime: numpy + soundfile

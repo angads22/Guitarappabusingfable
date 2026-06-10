@@ -22,7 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
             "chords, and map them to guitar tab and fretboard diagrams."
         ),
     )
-    p.add_argument("input", help="audio file (wav/flac/ogg/...)")
+    p.add_argument("input", nargs="?", help="audio file (wav/flac/ogg/...)")
     p.add_argument("--tab", action="store_true", help="print ASCII tab")
     p.add_argument("--fretboard", action="store_true", help="print a fretboard diagram per event")
     p.add_argument("--summary", action="store_true", help="print a fretboard map of all positions")
@@ -41,8 +41,26 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _interactive() -> bool:
+    """True when running as a double-clicked executable with a console."""
+    return bool(getattr(sys, "frozen", False)) and sys.stdout.isatty()
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if not args.input:
+        if _interactive():
+            # Double-clicked with no file: ask for one instead of erroring.
+            print("fretmap — guitar track to tab & fretboard map")
+            print("Tip: you can also drag an audio file onto fretmap.exe.\n")
+            args.input = input("Path to audio file (wav/flac/ogg/...): ").strip().strip('"')
+            if not args.input:
+                return 2
+        else:
+            build_parser().print_usage(sys.stderr)
+            print("error: missing input audio file", file=sys.stderr)
+            return 2
 
     try:
         tuning = parse_tuning(args.tuning) if args.tuning else STANDARD_TUNING
@@ -59,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     except Exception as exc:  # soundfile raises various error types
         print(f"error: could not analyze {args.input!r}: {exc}", file=sys.stderr)
+        _pause_if_interactive()
         return 1
 
     # Default view if no sections were requested explicitly.
@@ -106,7 +125,18 @@ def main(argv: list[str] | None = None) -> int:
             fh.write(text)
     else:
         sys.stdout.write(text)
+    _pause_if_interactive()
     return 0
+
+
+def _pause_if_interactive() -> None:
+    # Keep the console window open when the exe was double-clicked or a
+    # file was drag-and-dropped onto it.
+    if _interactive():
+        try:
+            input("\nPress Enter to exit...")
+        except EOFError:
+            pass
 
 
 if __name__ == "__main__":
