@@ -38,6 +38,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-polyphony", type=int, default=6, help="max simultaneous notes to detect (default 6)"
     )
     p.add_argument("-o", "--output", help="write output to file instead of stdout")
+    p.add_argument("--version", action="store_true", help="print version and exit")
+    p.add_argument(
+        "--check-updates", action="store_true", help="check GitHub releases for a newer version"
+    )
     return p
 
 
@@ -48,6 +52,23 @@ def _interactive() -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.version:
+        from fretmap import __version__
+
+        print(f"fretmap {__version__}")
+        return 0
+
+    if args.check_updates:
+        from fretmap import __version__, updater
+
+        info = updater.check_for_update(gui=False)
+        if info:
+            print(f"Update available: v{info.version} (you have v{__version__})")
+            print(f"Download: {info.release_url}")
+        else:
+            print(f"You are up to date (v{__version__}).")
+        return 0
 
     if not args.input:
         if _interactive():

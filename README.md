@@ -42,16 +42,22 @@ E o|---|---|-G-|---|
 
 ## Download (no Python needed)
 
-Every push builds standalone single-file executables for **Windows, macOS
-and Linux** via GitHub Actions (`Build executables` workflow). Grab
-`fretmap-windows` / `fretmap-macos` / `fretmap-linux` from the workflow run's
-**Artifacts** section (or from a Release for tagged versions), then either:
+Standalone single-file executables for **Windows, macOS and Linux** are on
+the [Releases page](https://github.com/angads22/Guitarappabusingfable/releases/latest).
+Two flavours per platform:
 
-- double-click it and type/paste the path to your audio file when asked,
-- drag an audio file onto `fretmap.exe`, or
-- run it from a terminal: `fretmap.exe mytrack.wav`
+- **`fretmap-gui-…`** — windowed app: open a file with a button, read the
+  transcription, save it to a text file. It **checks the repo for updates
+  on launch** (and every 6 hours); when a new release exists the
+  "Check for updates" button becomes **"Update to vX.Y.Z"** and one click
+  downloads the new executable and restarts into it.
+- **`fretmap-…`** — command-line version: double-click and type a path,
+  drag an audio file onto it, or use it from a terminal with all options.
+  `fretmap --check-updates` reports whether a newer release exists.
 
-On macOS/Linux make it executable first: `chmod +x fretmap-macos`.
+On macOS/Linux make them executable first: `chmod +x fretmap-gui-macos`.
+Every push also uploads fresh builds to the workflow run's Artifacts
+section; releases (tags `v*`) are what the self-updater follows.
 
 ## Installation (from source)
 

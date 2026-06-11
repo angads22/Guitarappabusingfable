@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fretmap"
-version = "0.1.0"
+version = "0.2.0"
 description = "DSP-based guitar transcription: detects notes, intervals and chords from an isolated guitar track and maps them to tab and fretboard diagrams."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -15,6 +15,9 @@ dependencies = [
 
 [project.scripts]
 fretmap = "fretmap.cli:main"
+
+[project.gui-scripts]
+fretmap-gui = "fretmap.gui:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]

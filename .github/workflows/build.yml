@@ -16,15 +16,15 @@ jobs:
           - os: windows-latest
             artifact: fretmap-windows
             binary: dist/fretmap.exe
-            release_name: fretmap-windows.exe
+            gui_binary: dist/fretmap-gui.exe
           - os: macos-latest
             artifact: fretmap-macos
             binary: dist/fretmap
-            release_name: fretmap-macos
+            gui_binary: dist/fretmap-gui
           - os: ubuntu-latest
             artifact: fretmap-linux
             binary: dist/fretmap
-            release_name: fretmap-linux
+            gui_binary: dist/fretmap-gui
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -39,10 +39,12 @@ jobs:
       - name: Test
         run: python -m pytest tests -q
 
-      - name: Build single-file executable
-        run: pyinstaller --onefile --name fretmap --collect-all soundfile --console fretmap/__main__.py
+      - name: Build single-file executables (CLI + GUI)
+        run: |
+          pyinstaller --onefile --name fretmap --collect-all soundfile --console fretmap/__main__.py
+          pyinstaller --onefile --name fretmap-gui --collect-all soundfile --windowed packaging/gui_launcher.py
 
-      - name: Smoke test binary
+      - name: Smoke test CLI binary
         shell: bash
         run: |
           "${{ matrix.binary }}" --help
@@ -52,7 +54,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ matrix.binary }}
+          path: |
+            ${{ matrix.binary }}
+            ${{ matrix.gui_binary }}
 
   release:
     name: Attach binaries to release
@@ -67,11 +71,16 @@ jobs:
           path: artifacts
 
       - name: Rename binaries per platform
+        # Names must match fretmap.updater.asset_name(), which the
+        # self-updater in shipped executables uses to find its download.
         run: |
           mkdir release
           cp artifacts/fretmap-windows/fretmap.exe release/fretmap-windows.exe
+          cp artifacts/fretmap-windows/fretmap-gui.exe release/fretmap-gui-windows.exe
           cp artifacts/fretmap-macos/fretmap release/fretmap-macos
+          cp artifacts/fretmap-macos/fretmap-gui release/fretmap-gui-macos
           cp artifacts/fretmap-linux/fretmap release/fretmap-linux
+          cp artifacts/fretmap-linux/fretmap-gui release/fretmap-gui-linux
 
       - uses: softprops/action-gh-release@v2
         with:

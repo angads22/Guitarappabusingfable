@@ -8,4 +8,4 @@ assignment -> tab / fretboard rendering.
 from fretmap.analyze import Event, analyze, analyze_file
 
 __all__ = ["Event", "analyze", "analyze_file"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"
