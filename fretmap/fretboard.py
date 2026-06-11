@@ -75,7 +75,11 @@ def assign_positions(
             if fretted and max(fretted) - min(fretted) > MAX_CHORD_SPAN:
                 return
             placed = sum(1 for p in chosen if p is not None)
-            cost = _chord_cost(frets, hand) - placed * 100.0
+            # Strummed chords occupy adjacent strings: penalise shapes
+            # with skipped strings between the used ones.
+            strings = sorted(p[0] for p in chosen if p is not None)
+            gaps = sum(b - a - 1 for a, b in zip(strings, strings[1:]))
+            cost = _chord_cost(frets, hand) + 0.35 * gaps - placed * 100.0
             if cost < best[0]:
                 best = (cost, chosen.copy())
             return

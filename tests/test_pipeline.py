@@ -27,14 +27,12 @@ def test_single_pitch_detection():
 
 def test_chord_pitch_detection():
     # Octave doublings (A3 = 2x A2) share every harmonic with the lower
-    # note and may be absorbed by it; require full pitch-class coverage
-    # and no spurious pitch classes.
+    # note; the recovery pass must bring them back, with no spurious
+    # extras: the detected set is exactly the played voicing.
     midis = n("A2", "E3", "A3", "C4", "E4")
     audio = render_sequence([(0.0, midis, 1.0)], sr=SR)
     pitches = detect_pitches(audio[: int(0.9 * SR)], SR)
-    detected = {p.midi for p in pitches}
-    assert {m % 12 for m in midis} == {m % 12 for m in detected}
-    assert detected <= set(midis)
+    assert {p.midi for p in pitches} == set(midis)
 
 
 def test_onset_count():

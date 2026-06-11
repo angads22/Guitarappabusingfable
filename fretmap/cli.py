@@ -37,6 +37,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--max-polyphony", type=int, default=6, help="max simultaneous notes to detect (default 6)"
     )
+    p.add_argument(
+        "--lead",
+        action="store_true",
+        help="isolate the lead line of a multi-guitar mix (tracks the register the lead occupies)",
+    )
     p.add_argument("-o", "--output", help="write output to file instead of stdout")
     p.add_argument("--version", action="store_true", help="print version and exit")
     p.add_argument(
@@ -95,6 +100,7 @@ def main(argv: list[str] | None = None) -> int:
             tuning=tuning,
             max_fret=args.max_fret,
             max_polyphony=args.max_polyphony,
+            lead=args.lead,
         )
     except Exception as exc:  # soundfile raises various error types
         print(f"error: could not analyze {args.input!r}: {exc}", file=sys.stderr)

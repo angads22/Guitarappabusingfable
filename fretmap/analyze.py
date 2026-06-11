@@ -31,6 +31,7 @@ class Event:
     label: str                     # e.g. 'E2', 'E2+B2 (perfect 5th)', 'Am7'
     short: str                     # compact label for the tab header
     positions: list[tuple[int, int] | None] = field(default_factory=list)
+    saliences: list[float] = field(default_factory=list)  # parallel to midis
 
     @property
     def note_names(self) -> list[str]:
@@ -45,6 +46,7 @@ class Event:
             "notes": self.note_names,
             "midis": self.midis,
             "freqs": [round(f, 2) for f in self.freqs],
+            "saliences": [round(s, 3) for s in self.saliences],
             "positions": [
                 {"string": p[0], "fret": p[1]} if p else None for p in self.positions
             ],
@@ -114,9 +116,70 @@ def analyze(
                 label=label,
                 short=short,
                 positions=positions,
+                saliences=[kept[m].salience for m in midis],
             )
         )
     return events
+
+
+def lead_filter(
+    events: list[Event],
+    tuning: tuple[int, ...] = STANDARD_TUNING,
+    max_fret: int = DEFAULT_MAX_FRET,
+) -> list[Event]:
+    """Keep only the lead line of a multi-guitar mix.
+
+    Two passes so a chordal intro cannot hijack the register estimate:
+    first the track-wide median of each event's most salient pitch fixes
+    the initial register; then a forward pass picks, per event, the pitch
+    maximising salience minus a soft distance-from-register penalty (so
+    octave jumps survive), drops strums (chords / 4+ simultaneous pitches) and
+    far-off low-salience winners, and tracks the register as an EMA of the
+    kept notes.
+    """
+    def is_lead_candidate(ev: Event) -> bool:
+        return 0 < len(ev.midis) < 4 and ev.kind != "chord"
+
+    picks = [
+        ev.midis[int(np.argmax(ev.saliences))] if ev.saliences else ev.midis[-1]
+        for ev in events
+        if is_lead_candidate(ev)
+    ]
+    if not picks:
+        return []
+    register = float(np.median(picks))
+
+    out: list[Event] = []
+    hand = 2.0
+    for ev in events:
+        if not is_lead_candidate(ev):
+            continue
+        sal = ev.saliences if len(ev.saliences) == len(ev.midis) else [1.0] * len(ev.midis)
+        best = max(
+            range(len(ev.midis)),
+            key=lambda i: sal[i] - 0.08 * abs(ev.midis[i] - register),
+        )
+        midi = ev.midis[best]
+        if abs(midi - register) > 12 and sal[best] < 0.5:
+            continue
+        register += 0.25 * (midi - register)
+        kind, label, short = classify([midi])
+        positions = assign_positions([midi], tuning, max_fret, hand)
+        hand = update_hand(positions, hand)
+        out.append(
+            Event(
+                time=ev.time,
+                duration=ev.duration,
+                midis=[midi],
+                freqs=[ev.freqs[best]] if best < len(ev.freqs) else [],
+                kind=kind,
+                label=label,
+                short=short,
+                positions=positions,
+                saliences=[sal[best]],
+            )
+        )
+    return out
 
 
 def analyze_file(
@@ -124,8 +187,11 @@ def analyze_file(
     tuning: tuple[int, ...] = STANDARD_TUNING,
     max_fret: int = DEFAULT_MAX_FRET,
     max_polyphony: int = 6,
+    lead: bool = False,
 ) -> tuple[list[Event], int, float]:
     """Analyze an audio file. Returns (events, sample_rate, duration_sec)."""
     samples, sr = load_audio(path)
     events = analyze(samples, sr, tuning=tuning, max_fret=max_fret, max_polyphony=max_polyphony)
+    if lead:
+        events = lead_filter(events, tuning, max_fret)
     return events, sr, len(samples) / sr

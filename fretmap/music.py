@@ -14,27 +14,41 @@ INTERVAL_SHORT = {
     7: "P5", 8: "m6", 9: "M6", 10: "m7", 11: "M7", 12: "P8",
 }
 
-# Pitch-class interval sets (relative to the root) -> chord suffix.
-# Listed roughly by how common the chord is; earlier entries win ties.
-CHORD_TEMPLATES: list[tuple[frozenset[int], str]] = [
-    (frozenset({0, 4, 7}), ""),
-    (frozenset({0, 3, 7}), "m"),
-    (frozenset({0, 4, 7, 10}), "7"),
-    (frozenset({0, 3, 7, 10}), "m7"),
-    (frozenset({0, 4, 7, 11}), "maj7"),
-    (frozenset({0, 5, 7}), "sus4"),
-    (frozenset({0, 2, 7}), "sus2"),
-    (frozenset({0, 3, 6}), "dim"),
-    (frozenset({0, 4, 8}), "aug"),
-    (frozenset({0, 4, 7, 9}), "6"),
-    (frozenset({0, 3, 7, 9}), "m6"),
-    (frozenset({0, 3, 6, 9}), "dim7"),
-    (frozenset({0, 3, 6, 10}), "m7b5"),
-    (frozenset({0, 3, 7, 11}), "m(maj7)"),
-    (frozenset({0, 2, 4, 7}), "add9"),
-    (frozenset({0, 5, 7, 10}), "7sus4"),
-    (frozenset({0, 2, 4, 7, 10}), "9"),
-    (frozenset({0, 2, 3, 7, 10}), "m9"),
+# Chord templates as (required, optional) pitch-class interval sets
+# (relative to the root) -> suffix. A chord matches when its pitch classes
+# cover every required tone and add nothing outside required+optional. The
+# perfect 5th is optional on most qualities (guitar voicings — especially
+# shells — routinely omit it; a missing b5 of dim/m7b5 is never waived,
+# it's the identity of the chord). Listed roughly by how common the chord
+# is; earlier entries win ties.
+CHORD_TEMPLATES: list[tuple[frozenset[int], frozenset[int], str]] = [
+    (frozenset({0, 4, 7}), frozenset(), ""),
+    (frozenset({0, 3, 7}), frozenset(), "m"),
+    (frozenset({0, 4, 10}), frozenset({7}), "7"),
+    (frozenset({0, 3, 10}), frozenset({7}), "m7"),
+    (frozenset({0, 4, 11}), frozenset({7}), "maj7"),
+    (frozenset({0, 5, 7}), frozenset(), "sus4"),
+    (frozenset({0, 2, 7}), frozenset(), "sus2"),
+    (frozenset({0, 3, 6}), frozenset(), "dim"),
+    (frozenset({0, 4, 8}), frozenset(), "aug"),
+    (frozenset({0, 4, 9}), frozenset({7}), "6"),
+    (frozenset({0, 3, 9}), frozenset({7}), "m6"),
+    (frozenset({0, 3, 6, 9}), frozenset(), "dim7"),
+    (frozenset({0, 3, 6, 10}), frozenset(), "m7b5"),
+    (frozenset({0, 3, 11}), frozenset({7}), "m(maj7)"),
+    (frozenset({0, 2, 4, 7}), frozenset(), "add9"),
+    (frozenset({0, 2, 3, 7}), frozenset(), "m(add9)"),
+    (frozenset({0, 4, 5, 7}), frozenset(), "add11"),
+    (frozenset({0, 5, 10}), frozenset({7}), "7sus4"),
+    (frozenset({0, 2, 4, 10}), frozenset({7}), "9"),
+    (frozenset({0, 2, 3, 10}), frozenset({7}), "m9"),
+    (frozenset({0, 2, 4, 11}), frozenset({7}), "maj9"),
+    (frozenset({0, 3, 4, 10}), frozenset({7}), "7#9"),
+    (frozenset({0, 1, 4, 10}), frozenset({7}), "7b9"),
+    (frozenset({0, 4, 9, 10}), frozenset({7, 2}), "13"),
+    (frozenset({0, 4, 5, 10}), frozenset({7, 2}), "11"),
+    (frozenset({0, 3, 5, 10}), frozenset({7, 2}), "m11"),
+    (frozenset({0, 2, 4, 9}), frozenset({7}), "6/9"),
 ]
 
 
@@ -87,21 +101,30 @@ def classify(midis: list[int]) -> tuple[str, str, str]:
         return "interval", label, INTERVAL_SHORT[reduced]
 
     # Three or more distinct pitch classes (or a doubled dyad): chord.
+    # Tolerant template matching: required tones must all be present,
+    # extras must be covered by the optional set. Bass-as-root wins, then
+    # the most fully voiced template, then template order.
     bass_pc = midis[0] % 12
-    matches: list[tuple[int, int, str]] = []  # (root!=bass, priority, name)
+    matches: list[tuple[tuple[int, float, int], str, str]] = []
     for root in pcs:
         intervals = frozenset((p - root) % 12 for p in pcs)
-        for priority, (template, suffix) in enumerate(CHORD_TEMPLATES):
-            if intervals == template:
-                name = NOTE_NAMES[root] + suffix
-                if root != bass_pc:
-                    name += f"/{NOTE_NAMES[bass_pc]}"
-                matches.append((0 if root == bass_pc else 1, priority, name))
+        for priority, (required, optional, suffix) in enumerate(CHORD_TEMPLATES):
+            if not (required <= intervals <= required | optional):
+                continue
+            score = len(intervals & required) + 0.5 * len(intervals & optional)
+            short = NOTE_NAMES[root] + suffix
+            label = short
+            if root != bass_pc:
+                label += f"/{NOTE_NAMES[bass_pc]}"
+            if 7 in optional and 7 not in intervals and len(required) >= 3:
+                label += " (no 5th)"
+            key = (0 if root == bass_pc else 1, -score, priority)
+            matches.append((key, label, short))
 
     if matches:
-        matches.sort()
-        name = matches[0][2]
-        return "chord", name, name.split("/")[0]
+        matches.sort(key=lambda t: t[0])
+        _key, label, short = matches[0]
+        return "chord", label, short
 
     # Power chord with doubled root: e.g. E2 B2 E3.
     if {(p - bass_pc) % 12 for p in pcs} == {0, 7}:

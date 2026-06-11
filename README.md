@@ -16,23 +16,23 @@ $ fretmap rhythm.wav
 rhythm.wav: 4.70s @ 44100 Hz — 6 events (2 notes, 1 intervals, 3 chords)
 
 [   0.00s] chord    E                        notes: E2 B2 E3 G#3
-[   0.99s] chord    Am                       notes: A2 E3 C4 E4
+[   0.99s] chord    Am                       notes: A2 E3 A3 C4 E4
 [   1.97s] interval G5 (G2+D3)               notes: G2 D3
 [   2.47s] note     B3                       notes: B3
 [   2.97s] note     C4                       notes: C4
-[   3.48s] chord    D                        notes: D3 A3 F#4
+[   3.48s] chord    D                        notes: D3 A3 D4 F#4
 
    E     Am    G5  B   C   D
 e |-------0-----------------2----|
-B |-------1---------0---1--------|
-G |-1-----------------------2----|
+B |-------1---------0---1---3----|
+G |-1-----2-----------------2----|
 D |-2-----2-----0-----------0----|
 A |-2-----0----------------------|
 E |-0-----------3----------------|
 
 Fretboard map of all detected positions:
 e o|---|-F#|---|---|
-B o|-C-|---|---|---|
+B o|-C-|---|-D-|---|
 G  |-G#|-A-|---|---|
 D o|---|-E-|---|---|
 A o|---|-B-|---|---|
@@ -76,6 +76,7 @@ fretmap input.wav --summary        # single map of every position used
 fretmap input.wav --json           # machine-readable output
 fretmap input.wav --tuning D2,A2,D3,G3,B3,E4   # drop-D (any tuning, low→high)
 fretmap input.wav --max-fret 21 --max-polyphony 5
+fretmap input.wav --lead            # isolate the lead line of a 2-guitar mix
 fretmap input.wav -o transcription.txt
 ```
 
@@ -111,11 +112,26 @@ fretmap examples/output/rhythm.wav
    that are only still **ringing** from the previous event — no energy
    rise in their harmonic bands at the onset — are dropped instead of
    being re-reported as new notes.
+   Three refinements make voicings come out right on real strings:
+   a **stiff-string stretch** is fitted per note (real partials sit at
+   h·f0·√(1+Bh²), progressively sharp) and the comb evaluated against the
+   stretched positions; a **hidden-note recovery pass** re-examines the
+   uncancelled spectrum for octave/twelfth/double-octave doublings whose
+   every partial coincides with a lower note's comb (e.g. the A3 inside an
+   open Am, or the top E4 of an open Em7) — they are accepted only when
+   the energy at the hidden note's partials exceeds the lower note's own
+   interpolated envelope on several harmonics at once, with a decay-rate
+   veto so a pickup/body resonance can't fake a note; and a time-domain
+   **YIN** estimate arbitrates octave errors on single notes.
 3. **Classification** — 1 pitch → *note*; 2 pitches → *interval* (named,
    e.g. "minor 3rd", with root+fifth labelled as a power chord like `G5`);
-   3+ pitch classes → *chord*, identified by matching interval sets
-   against templates (maj, min, 7, m7, maj7, sus2/4, dim, aug, 6, add9, …)
-   with slash-chord naming when the bass isn't the root.
+   3+ pitch classes → *chord*, identified by tolerant template matching:
+   each template declares required and optional tones (the perfect 5th is
+   optional on most qualities), so shell voicings get their real name —
+   E2+D3+G3 is `Em7 (no 5th)`, not an anonymous note cluster. Templates
+   cover maj, min, 7, m7, maj7, sus2/4, dim, aug, 6, m6, dim7, m7b5,
+   add9/add11, 9, m9, maj9, 7#9, 7b9, 11, m11, 13 and 6/9, with
+   slash-chord naming when the bass isn't the root.
 4. **Fretboard mapping** — every pitch has up to six (string, fret)
    candidates. Single notes pick the position closest to the current hand
    position (open strings are cheap); chords are solved by backtracking
@@ -131,9 +147,15 @@ fretmap examples/output/rhythm.wav
 - Designed for **isolated** (clean/DI or lightly processed) guitar.
   Heavy distortion smears harmonics and will reduce accuracy.
 - **Octave doublings inside a strummed chord** (e.g. A2 and A3 in an open
-  Am) share every harmonic, so the doubled note may be absorbed into the
-  lower one. Chord names are derived from pitch classes and survive this;
-  the tab then shows the essential voicing rather than every doubled string.
+  Am) share every harmonic with the lower note; the recovery pass brings
+  them back when the spectral evidence is attributable, so full open-chord
+  voicings render with (almost) all their strings. Two honest gaps remain:
+  a doubling more than ~12 dB quieter than the rest of the strum may be
+  missed, and the B3 inside an open E-shape chord is unrecoverable in
+  principle (its fundamental sits 2 cents from E2's 3rd harmonic) — a full
+  six-string E or Em7 strum therefore tabs as five strings.
+- `--lead` isolates the dominant melodic line by register tracking; it is
+  a heuristic for two-guitar mixes, not full source separation.
 - Fretboard positions are inherently ambiguous on a guitar (the same pitch
   exists in up to six places); the mapper picks an ergonomic choice, which
   may differ from what was actually fingered.

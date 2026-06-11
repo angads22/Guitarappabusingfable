@@ -5,7 +5,7 @@ detection -> note/interval/chord classification -> fretboard position
 assignment -> tab / fretboard rendering.
 """
 
-from fretmap.analyze import Event, analyze, analyze_file
+from fretmap.analyze import Event, analyze, analyze_file, lead_filter
 
-__all__ = ["Event", "analyze", "analyze_file"]
-__version__ = "0.2.0"
+__all__ = ["Event", "analyze", "analyze_file", "lead_filter"]
+__version__ = "0.3.0"
