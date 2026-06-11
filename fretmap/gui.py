@@ -213,7 +213,11 @@ def main() -> int:
     except ImportError:
         print("error: tkinter is not available; use the 'fretmap' CLI instead")
         return 1
-    root = tk.Tk()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        print(f"error: cannot open a window ({exc}); use the 'fretmap' CLI instead")
+        return 1
     App(root)
     root.mainloop()
     return 0

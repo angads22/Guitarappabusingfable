@@ -56,6 +56,16 @@ jobs:
           python examples/make_demo.py demo
           "${{ matrix.binary }}" demo/rhythm.wav --events
 
+      - name: Smoke test GUI binary launches (Linux, virtual display)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q xvfb
+          xvfb-run -a ./dist/fretmap-gui &
+          GUI_PID=$!
+          sleep 10
+          kill -0 $GUI_PID   # still alive after 10s = window opened fine
+          kill $GUI_PID
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
