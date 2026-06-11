@@ -5,14 +5,19 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from fretmap.audio import load_audio
-from fretmap.dsp import detect_onsets, trim_to_sounding
+from fretmap.dsp import detect_onsets, harmonic_rise, trim_to_sounding
 from fretmap.fretboard import (
     DEFAULT_MAX_FRET,
     STANDARD_TUNING,
     assign_positions,
     update_hand,
 )
-from fretmap.multipitch import detect_pitches
+from fretmap.multipitch import (
+    detect_pitches,
+    estimate_tuning_offset,
+    freq_to_midi_float,
+    midi_to_freq,
+)
 from fretmap.music import classify, midi_to_name
 
 
@@ -54,16 +59,48 @@ def analyze(
     max_polyphony: int = 6,
 ) -> list[Event]:
     onsets = detect_onsets(samples, sr)
-    events: list[Event] = []
-    hand = 2.0
 
+    # Search range follows the tuning: lowest open string to the highest
+    # fret, with half-semitone margins.
+    fmin = midi_to_freq(min(tuning)) * 0.97
+    fmax = midi_to_freq(max(tuning) + max_fret) * 1.03
+
+    # Pass 1: pitch detection per inter-onset segment.
+    segments: list[tuple[int, np.ndarray, list]] = []
     for i, start in enumerate(onsets):
         end = onsets[i + 1] if i + 1 < len(onsets) else len(samples)
         seg = trim_to_sounding(samples[start:end], sr)
-        pitches = detect_pitches(seg, sr, max_polyphony=max_polyphony)
-        if not pitches:
+        pitches = detect_pitches(
+            seg, sr, fmin=fmin, fmax=fmax, max_polyphony=max_polyphony
+        )
+        if pitches:
+            segments.append((start, seg, pitches))
+
+    # Pass 2: round pitches against the track's global tuning offset, drop
+    # notes that are only still ringing from the previous event, classify,
+    # and assign fretboard positions.
+    offset = estimate_tuning_offset([p for _, _, ps in segments for p in ps])
+    events: list[Event] = []
+    hand = 2.0
+    prev_detected: set[int] = set()
+
+    for start, seg, pitches in segments:
+        notes: dict[int, object] = {}
+        for p in pitches:
+            midi = int(round(freq_to_midi_float(p.freq) - offset / 100.0))
+            if midi not in notes or p.salience > notes[midi].salience:
+                notes[midi] = p
+        detected = set(notes)
+        kept = {
+            midi: p
+            for midi, p in notes.items()
+            if midi not in prev_detected or harmonic_rise(samples, sr, start, p.freq)
+        }
+        prev_detected = detected
+        if not kept:
             continue
-        midis = [p.midi for p in pitches]
+
+        midis = sorted(kept)
         kind, label, short = classify(midis)
         positions = assign_positions(midis, tuning, max_fret, hand)
         hand = update_hand(positions, hand)
@@ -72,7 +109,7 @@ def analyze(
                 time=start / sr,
                 duration=len(seg) / sr,
                 midis=midis,
-                freqs=[p.freq for p in pitches],
+                freqs=[kept[m].freq for m in midis],
                 kind=kind,
                 label=label,
                 short=short,

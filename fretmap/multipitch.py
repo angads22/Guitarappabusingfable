@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import numpy as np
 
 GUITAR_FMIN = 73.0   # just below drop-D D2
-GUITAR_FMAX = 1200.0  # just above fret 24 on the high E string
+GUITAR_FMAX = 1350.0  # just above fret 24 on the high E string (E6 = 1318.5 Hz)
 
 
 @dataclass
@@ -105,10 +105,15 @@ def detect_pitches(
     work = spec.copy()
     found: list[tuple[float, float]] = []
     first_score = None
+    cand_alive = np.ones(len(cand_freqs), dtype=bool)
 
-    for _ in range(max_polyphony):
-        best_score, best_f = 0.0, 0.0
-        for f in cand_freqs:
+    for _ in range(3 * max_polyphony):
+        if len(found) >= max_polyphony:
+            break
+        best_score, best_f, best_idx = 0.0, 0.0, -1
+        for i, f in enumerate(cand_freqs):
+            if not cand_alive[i]:
+                continue
             score = 0.0
             for h in range(1, n_harmonics + 1):
                 fh = h * f
@@ -125,13 +130,11 @@ def detect_pitches(
                 comb = np.exp(-0.5 * (offset / sigma) ** 2)
                 score += weights[h - 1] * amp * comb
             if score > best_score:
-                best_score, best_f = score, f
+                best_score, best_f, best_idx = score, f, i
 
-        if first_score is None:
-            if best_score < 1e-6:
-                break
-            first_score = best_score
-        elif best_score < rel_floor * first_score:
+        if best_idx < 0 or best_score < 1e-6:
+            break
+        if first_score is not None and best_score < rel_floor * first_score:
             break
 
         f0 = best_f
@@ -143,10 +146,16 @@ def detect_pitches(
         if even > 0 and odd < 0.15 * even and 2 * f0 <= fmax * 1.06:
             f0 *= 2.0
 
-        # Require some energy at the fundamental itself.
+        # Require some energy at the fundamental itself. If it's gone (e.g.
+        # an octave shadow whose energy was cancelled with an earlier note),
+        # reject just this candidate and keep searching for other notes.
         a0, _ = _band_max(work, bin_hz, f0, res_hz)
         if a0 < 0.01 * spec_max:
-            break
+            cand_alive[np.abs(cand_midis - freq_to_midi_float(best_f)) < 0.3] = False
+            continue
+
+        if first_score is None:
+            first_score = best_score
 
         # Refine f0 from the first few harmonic peak positions.
         num = den = 0.0
@@ -186,3 +195,22 @@ def detect_pitches(
         if midi not in pitches or p.salience > pitches[midi].salience:
             pitches[midi] = p
     return sorted(pitches.values(), key=lambda p: p.midi)
+
+
+def estimate_tuning_offset(pitches: list[Pitch]) -> float:
+    """Global tuning offset of a track in cents, from all detected pitches.
+
+    A guitar tuned somewhat off A440 puts every note the same distance from
+    the equal-tempered grid; rounding each note independently then flips
+    notes near the +-50 cent boundary inconsistently. The circular mean of
+    the per-note deviations (cents wrap at +-50) gives one consistent
+    offset to subtract before rounding.
+    """
+    if not pitches:
+        return 0.0
+    angles = np.array([p.cents for p in pitches]) * (2 * np.pi / 100.0)
+    weights = np.array([max(p.salience, 1e-3) for p in pitches])
+    z = np.sum(weights * np.exp(1j * angles))
+    if abs(z) < 1e-9:
+        return 0.0
+    return float(np.angle(z) * (100.0 / (2 * np.pi)))

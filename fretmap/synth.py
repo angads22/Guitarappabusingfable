@@ -16,11 +16,16 @@ def pluck(
     sr: int = 44100,
     amp: float = 0.5,
     n_harmonics: int = 12,
+    inharmonicity: float = 0.0,
 ) -> np.ndarray:
+    """One plucked note. `inharmonicity` is the stiff-string coefficient B:
+    partial h sits at h*freq*sqrt(1 + B*h^2), progressively sharp like a
+    real string (electric guitar B is roughly 1e-4..5e-4 on wound strings).
+    """
     t = np.arange(int(duration * sr)) / sr
     sig = np.zeros_like(t)
     for h in range(1, n_harmonics + 1):
-        fh = h * freq
+        fh = h * freq * np.sqrt(1.0 + inharmonicity * h * h)
         if fh >= sr / 2 * 0.95:
             break
         decay = np.exp(-t * (2.0 + 0.8 * h))
@@ -34,14 +39,21 @@ def pluck(
     return amp * sig / peak if peak > 0 else sig
 
 
-def pluck_midi(midi: int, duration: float, sr: int = 44100, amp: float = 0.5) -> np.ndarray:
-    return pluck(midi_to_freq(midi), duration, sr=sr, amp=amp)
+def pluck_midi(
+    midi: int,
+    duration: float,
+    sr: int = 44100,
+    amp: float = 0.5,
+    inharmonicity: float = 0.0,
+) -> np.ndarray:
+    return pluck(midi_to_freq(midi), duration, sr=sr, amp=amp, inharmonicity=inharmonicity)
 
 
 def render_sequence(
     events: list[tuple[float, list[int], float]],
     sr: int = 44100,
     tail: float = 0.3,
+    inharmonicity: float = 0.0,
 ) -> np.ndarray:
     """Render (start_time, [midi notes], duration) events into one track.
 
@@ -52,7 +64,13 @@ def render_sequence(
     for start, midis, dur in events:
         for k, midi in enumerate(midis):
             stagger = int(k * 0.006 * sr)
-            tone = pluck_midi(midi, dur, sr=sr, amp=0.5 / max(1, len(midis)) ** 0.5)
+            tone = pluck_midi(
+                midi,
+                dur,
+                sr=sr,
+                amp=0.5 / max(1, len(midis)) ** 0.5,
+                inharmonicity=inharmonicity,
+            )
             i = int(start * sr) + stagger
             j = min(len(out), i + len(tone))
             out[i:j] += tone[: j - i]

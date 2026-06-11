@@ -22,13 +22,13 @@ rhythm.wav: 4.70s @ 44100 Hz — 6 events (2 notes, 1 intervals, 3 chords)
 [   2.97s] note     C4                       notes: C4
 [   3.48s] chord    D                        notes: D3 A3 F#4
 
-   E   Am  G5  B   C   D
-e |-----0---------------2--|
-B |-----1-------0---1------|
-G |-1-------------------2--|
-D |-2---2---0-----------0--|
-A |-2---0------------------|
-E |-0-------3--------------|
+   E     Am    G5  B   C   D
+e |-------0-----------------2----|
+B |-------1---------0---1--------|
+G |-1-----------------------2----|
+D |-2-----2-----0-----------0----|
+A |-2-----0----------------------|
+E |-0-----------3----------------|
 
 Fretboard map of all detected positions:
 e o|---|-F#|---|---|
@@ -96,15 +96,21 @@ fretmap examples/output/rhythm.wav
 2. **Polyphonic pitch detection** — for each inter-onset segment the pluck
    transient is skipped and a ~200 ms window is analyzed with a
    zero-padded FFT. Fundamental candidates on a quarter-semitone grid
-   (E2…fret-24 range) are scored by a **harmonically weighted sum of
-   spectral peaks**, where each captured peak is also weighted by how
-   exactly it sits on the candidate's harmonic comb (this stops low
-   candidates from "vacuuming up" other notes' harmonics). The best
-   candidate is taken, refined by parabolic peak interpolation, its
-   harmonics are cancelled from the working spectrum, and the search
-   repeats — yielding one pitch for a single note and several for a chord.
-   A sub-octave guard (odd vs. even harmonic energy) suppresses
-   half-pitch errors.
+   (spanning the tuning's lowest open string up to its highest fret) are
+   scored by a **harmonically weighted sum of spectral peaks**, where each
+   captured peak is also weighted by how exactly it sits on the
+   candidate's harmonic comb (this stops low candidates from "vacuuming
+   up" other notes' harmonics). The best candidate is taken, refined by
+   parabolic peak interpolation, its harmonics are cancelled from the
+   working spectrum, and the search repeats — yielding one pitch for a
+   single note and several for a chord. A sub-octave guard (odd vs. even
+   harmonic energy) suppresses half-pitch errors. A **global tuning
+   offset** (circular mean of every note's deviation from equal
+   temperament) is then estimated for the whole track, so a uniformly
+   detuned guitar still rounds to consistent semitones. Finally, notes
+   that are only still **ringing** from the previous event — no energy
+   rise in their harmonic bands at the onset — are dropped instead of
+   being re-reported as new notes.
 3. **Classification** — 1 pitch → *note*; 2 pitches → *interval* (named,
    e.g. "minor 3rd", with root+fifth labelled as a power chord like `G5`);
    3+ pitch classes → *chord*, identified by matching interval sets
@@ -115,7 +121,8 @@ fretmap examples/output/rhythm.wav
    position (open strings are cheap); chords are solved by backtracking
    for a playable shape: distinct strings, fretted span ≤ 4 frets,
    minimal span/height/movement.
-5. **Rendering** — ASCII tab (chord labels above the columns), per-event
+5. **Rendering** — ASCII tab (chord labels above the columns, column
+   spacing proportional to the time until the next onset), per-event
    fretboard diagrams with note names on the grid, a whole-track fretboard
    map, and JSON for downstream tools.
 

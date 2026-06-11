@@ -24,16 +24,24 @@ def render_tab(
     labels = _string_labels(tuning)
     prefix_w = max(len(l) for l in labels) + 1
 
+    # Crude rhythm: column spacing is proportional to the time until the
+    # next onset, in units of the median inter-onset gap (the "tatum").
+    gaps = [b.time - a.time for a, b in zip(events, events[1:])]
+    tatum = sorted(gaps)[len(gaps) // 2] if gaps else 0.0
+
     columns: list[tuple[str, list[str]]] = []
-    for ev in events:
+    for i, ev in enumerate(events):
         frets = [""] * n_strings
         for pos in ev.positions:
             if pos is not None:
                 s, f = pos
                 frets[s] = str(f)
         w = max(2, max((len(f) for f in frets), default=2), min(len(ev.short), 6))
-        cells = ["-" * (w - len(f)) + f + "--" for f in frets]
-        header = ev.short[: w + 2].ljust(w + 2)
+        gap = gaps[i] if i < len(gaps) else ev.duration
+        units = min(4, max(1, round(gap / tatum))) if tatum > 0 else 1
+        trail = 2 * units
+        cells = ["-" * (w - len(f)) + f + "-" * trail for f in frets]
+        header = ev.short[: w + trail].ljust(w + trail)
         columns.append((header, cells))
 
     systems: list[str] = []

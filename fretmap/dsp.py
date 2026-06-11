@@ -73,6 +73,54 @@ def detect_onsets(
     return [max(0, i * hop - pad) for i in accepted]
 
 
+def harmonic_rise(
+    x: np.ndarray,
+    sr: int,
+    onset: int,
+    freq: float,
+    n_harmonics: int = 4,
+    win: float = 0.06,
+    ratio: float = 1.8,
+) -> bool:
+    """Did energy near `freq`'s harmonics rise at `onset` (samples)?
+
+    Compares short windows just before and just after the onset. A string
+    still ringing from an earlier event only decays across the onset
+    (no rise); a re-struck or new note jumps well above the pre-onset
+    level. Used to tell sustained notes from re-attacks.
+    """
+    n = int(win * sr)
+    skip = int(0.015 * sr)  # let the broadband pluck transient pass
+    if onset < n:
+        return True  # nothing before the onset: necessarily a new note
+    after = x[onset + skip : onset + skip + n]
+    if len(after) < n // 2:
+        return True
+    before = x[onset - n : onset]
+    m = min(len(before), len(after))
+    w = np.hanning(m)
+    fb = np.abs(np.fft.rfft(before[:m] * w))
+    fa = np.abs(np.fft.rfft(after[:m] * w))
+    bin_hz = sr / m
+
+    def band_energy(spec: np.ndarray, fh: float) -> float:
+        half_hz = max(0.03 * fh, 2.0 * bin_hz)
+        lo = max(0, int((fh - half_hz) / bin_hz))
+        hi = min(len(spec) - 1, int((fh + half_hz) / bin_hz) + 1)
+        return float(spec[lo : hi + 1].max(initial=0.0))
+
+    e_before = e_after = 0.0
+    for h in range(1, n_harmonics + 1):
+        fh = h * freq
+        if fh >= sr / 2:
+            break
+        e_before += band_energy(fb, fh)
+        e_after += band_energy(fa, fh)
+    if e_before <= 1e-12:
+        return True
+    return e_after > ratio * e_before
+
+
 def trim_to_sounding(seg: np.ndarray, sr: int, rel: float = 0.05) -> np.ndarray:
     """Trim trailing near-silence from a segment using an RMS envelope."""
     hop = max(1, int(0.01 * sr))
