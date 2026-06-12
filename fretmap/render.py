@@ -32,10 +32,11 @@ def render_tab(
     columns: list[tuple[str, list[str]]] = []
     for i, ev in enumerate(events):
         frets = [""] * n_strings
-        for pos in ev.positions:
+        for k, pos in enumerate(ev.positions):
             if pos is not None:
                 s, f = pos
-                frets[s] = str(f)
+                ghost = k < len(ev.inferred) and ev.inferred[k]
+                frets[s] = f"({f})" if ghost else str(f)
         w = max(2, max((len(f) for f in frets), default=2), min(len(ev.short), 6))
         gap = gaps[i] if i < len(gaps) else ev.duration
         units = min(4, max(1, round(gap / tatum))) if tatum > 0 else 1
@@ -137,6 +138,9 @@ def render_event_list(events: list[Event]) -> str:
     lines = []
     for ev in events:
         kind = ev.kind.ljust(8)
-        notes = " ".join(ev.note_names)
+        notes = " ".join(
+            f"({name})" if i < len(ev.inferred) and ev.inferred[i] else name
+            for i, name in enumerate(ev.note_names)
+        )
         lines.append(f"[{ev.time:7.2f}s] {kind} {ev.label:<24} notes: {notes}")
     return "\n".join(lines)

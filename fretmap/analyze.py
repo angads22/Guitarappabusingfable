@@ -9,6 +9,7 @@ from fretmap.dsp import detect_onsets, harmonic_rise, trim_to_sounding
 from fretmap.fretboard import (
     DEFAULT_MAX_FRET,
     STANDARD_TUNING,
+    _chord_cost,
     assign_positions,
     update_hand,
 )
@@ -19,6 +20,7 @@ from fretmap.multipitch import (
     midi_to_freq,
 )
 from fretmap.music import classify, midi_to_name
+from fretmap.shapes import completion_candidates, shape_positions
 
 
 @dataclass
@@ -32,12 +34,17 @@ class Event:
     short: str                     # compact label for the tab header
     positions: list[tuple[int, int] | None] = field(default_factory=list)
     saliences: list[float] = field(default_factory=list)  # parallel to midis
+    # Parallel to midis; True for notes added by catalogue voicing
+    # completion rather than found in the spectrum. A short or empty list
+    # reads as all-False (Events built elsewhere may omit it).
+    inferred: list[bool] = field(default_factory=list)
 
     @property
     def note_names(self) -> list[str]:
         return [midi_to_name(m) for m in self.midis]
 
     def to_dict(self) -> dict:
+        flags = (self.inferred + [False] * len(self.midis))[: len(self.midis)]
         return {
             "time": round(self.time, 4),
             "duration": round(self.duration, 4),
@@ -47,10 +54,58 @@ class Event:
             "midis": self.midis,
             "freqs": [round(f, 2) for f in self.freqs],
             "saliences": [round(s, 3) for s in self.saliences],
+            "inferred": flags,
             "positions": [
                 {"string": p[0], "fret": p[1]} if p else None for p in self.positions
             ],
         }
+
+
+def _complete_voicing(
+    kept: dict, tuning: tuple[int, ...], max_fret: int, offset: float
+) -> tuple[int, list] | None:
+    """Catalogue completion: infer the one spectrally masked string of a
+    nearly-full strummed shape.
+
+    Returns (missing_midi, candidate fingerings) or None. All gates must
+    hold:
+
+    - >= 5 detected notes (shells and dyads can categorically never grow
+      a phantom string);
+    - the detected set is not itself a known complete shape;
+    - the missing note's pitch class is already present (octave doubling
+      only — never invent a new chord tone);
+    - the missing fundamental sits within ~30 cents of an integer
+      multiple (>= 2) of at least TWO distinct detected fundamentals.
+      A single-comb doubling (e.g. D4 over D3) is recoverable by the
+      spectral recovery pass, so its absence is evidence of absence;
+      only a double collision (e.g. B3 on both 3x E2 and 2x B2) is
+      genuinely unattributable from the spectrum;
+    - every eligible candidate shape agrees on the same missing note.
+    """
+    midis = sorted(kept)
+    if len(midis) < 5 or shape_positions(midis, tuning, max_fret):
+        return None
+    pcs = {m % 12 for m in midis}
+
+    def masked(midi: int) -> bool:
+        f = midi_to_freq(midi + offset / 100.0)
+        bases = 0
+        for p in kept.values():
+            ratio = f / p.freq
+            h = round(ratio)
+            if h >= 2 and abs(1200.0 * np.log2(ratio / h)) <= 30.0:
+                bases += 1
+        return bases >= 2
+
+    eligible: dict[int, list] = {}
+    for missing, positions in completion_candidates(midis, tuning, max_fret):
+        if missing % 12 in pcs and (missing in eligible or masked(missing)):
+            eligible.setdefault(missing, []).append(positions)
+    if len(eligible) != 1:
+        return None
+    ((missing, fingerings),) = eligible.items()
+    return missing, fingerings
 
 
 def analyze(
@@ -103,20 +158,41 @@ def analyze(
             continue
 
         midis = sorted(kept)
+        inferred = [False] * len(midis)
+        shape = None
+        completed = _complete_voicing(kept, tuning, max_fret, offset)
+        if completed is not None:
+            missing, fingerings = completed
+            # The inferred note is asserted to be sounding, so it must
+            # take part in ring-over suppression for the next event.
+            prev_detected.add(missing)
+            midis = sorted(midis + [missing])
+            inferred = [m == missing for m in midis]
+            shape = min(
+                fingerings, key=lambda ps: _chord_cost([f for _, f in ps], hand)
+            )
+
         kind, label, short = classify(midis)
-        positions = assign_positions(midis, tuning, max_fret, hand)
+        positions = (
+            list(shape) if shape else assign_positions(midis, tuning, max_fret, hand)
+        )
         hand = update_hand(positions, hand)
+        freqs, saliences = [], []
+        for m, inf in zip(midis, inferred):
+            freqs.append(midi_to_freq(m + offset / 100.0) if inf else kept[m].freq)
+            saliences.append(0.0 if inf else kept[m].salience)
         events.append(
             Event(
                 time=start / sr,
                 duration=len(seg) / sr,
                 midis=midis,
-                freqs=[kept[m].freq for m in midis],
+                freqs=freqs,
                 kind=kind,
                 label=label,
                 short=short,
                 positions=positions,
-                saliences=[kept[m].salience for m in midis],
+                saliences=saliences,
+                inferred=inferred,
             )
         )
     return events

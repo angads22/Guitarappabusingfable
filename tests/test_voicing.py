@@ -19,6 +19,7 @@ import pytest
 from fretmap.analyze import analyze, lead_filter
 from fretmap.multipitch import detect_pitches
 from fretmap.music import classify, midi_to_name, name_to_midi
+from fretmap.render import render_tab
 from fretmap.synth import drive, pluck_midi, render_sequence
 
 SR = 44100
@@ -100,11 +101,16 @@ def test_full_em7_vs_shell():
         pluck_pos=0.2,
     )
     [ev_full] = analyze(full, SR)
-    assert ev_full.short == "Em7"
-    # B3 is the documented unrecoverable doubling; the other 5 strings are
-    # exact, including the top E4.
-    assert set(ev_full.note_names) == {"E2", "B2", "D3", "G3", "E4"}
-    assert all(p is not None for p in ev_full.positions)
+    assert ev_full.label == "Em7"
+    # B3 is spectrally unrecoverable (its fundamental sits on both 3x E2
+    # and 2x B2), but the detected 5 strings are one short of exactly one
+    # catalogue shape, so the voicing is completed — with B3 flagged as
+    # inferred, never passed off as detected.
+    assert ev_full.note_names == ["E2", "B2", "D3", "G3", "B3", "E4"]
+    assert ev_full.inferred == [False, False, False, False, True, False]
+    assert ev_full.positions == [(0, 0), (1, 2), (2, 0), (3, 0), (4, 0), (5, 0)]
+    assert ev_full.saliences[4] == 0.0
+    assert "(0)" in render_tab([ev_full])
 
     shell = render_sequence(
         [(0.0, n("E2", "D3", "G3"), 1.2)], sr=SR, inharmonicity=B_REAL, pluck_pos=0.2
@@ -113,10 +119,11 @@ def test_full_em7_vs_shell():
     assert ev_shell.note_names == ["E2", "D3", "G3"]
     assert ev_shell.short == "Em7"
     assert "no 5th" in ev_shell.label
+    assert not any(ev_shell.inferred)
 
-    # The tabs are distinct: a strum shows (most of) its strings, the
-    # shell exactly three.
-    assert len([p for p in ev_full.positions if p]) >= 5
+    # The tabs are distinct: a strum shows all six strings, the shell
+    # exactly three.
+    assert len([p for p in ev_full.positions if p]) == 6
     assert len([p for p in ev_shell.positions if p]) == 3
 
 
@@ -129,8 +136,10 @@ def test_open_chord_voicings():
     )
     [ev] = analyze(open_e, SR)
     assert ev.label == "E"
-    got = set(ev.note_names)
-    assert {"E2", "B2", "E3", "G#3", "E4"} <= got  # B3: documented waiver
+    # The masked B3 comes back via catalogue completion, flagged inferred.
+    assert ev.note_names == ["E2", "B2", "E3", "G#3", "B3", "E4"]
+    assert ev.inferred == [False, False, False, False, True, False]
+    assert ev.positions == [(0, 0), (1, 2), (2, 2), (3, 1), (4, 0), (5, 0)]
     assert {m % 12 for m in ev.midis} == {4, 8, 11}
 
     open_am = render_sequence(
@@ -142,6 +151,29 @@ def test_open_chord_voicings():
     [ev] = analyze(open_am, SR)
     assert ev.label == "Am"
     assert set(ev.note_names) == {"A2", "E3", "A3", "C4", "E4"}
+    assert not any(ev.inferred)  # complete known shape: nothing to infer
+
+
+def test_no_inference_on_sparse_events():
+    # Dyads and small chords can categorically never grow an inferred
+    # string (the >= 5 detected-notes gate).
+    audio = render_sequence(
+        [
+            (0.0, n("G2", "D3"), 0.9),
+            (1.0, n("E2", "B2", "E3"), 0.9),
+            (2.0, n("E2", "D3", "G3"), 0.9),
+        ],
+        sr=SR,
+        inharmonicity=B_REAL,
+        pluck_pos=0.2,
+    )
+    events = analyze(audio, SR)
+    assert [sorted(ev.note_names) for ev in events] == [
+        ["D3", "G2"],
+        ["B2", "E2", "E3"],
+        ["D3", "E2", "G3"],
+    ]
+    assert not any(any(ev.inferred) for ev in events)
 
 
 # --- extended-chord naming ---------------------------------------------------

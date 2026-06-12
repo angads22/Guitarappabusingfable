@@ -87,6 +87,7 @@ def test_event_to_dict():
     assert d["kind"] == "note"
     assert d["notes"] == ["E2"]
     assert d["positions"] == [{"string": 0, "fret": 0}]
+    assert d["inferred"] == [False]
 
 
 @pytest.mark.parametrize(
