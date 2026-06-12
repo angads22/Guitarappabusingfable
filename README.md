@@ -136,7 +136,15 @@ fretmap examples/output/rhythm.wav
    candidates. Single notes pick the position closest to the current hand
    position (open strings are cheap); chords are solved by backtracking
    for a playable shape: distinct strings, fretted span ≤ 4 frets,
-   minimal span/height/movement.
+   minimal span/height/movement. A built-in **catalogue of real guitar
+   shapes** (open chords, barres, shell voicings, triads, drone shapes —
+   each transposable up the neck) competes with the backtracker, so known
+   voicings come out fingered the way a guitarist plays them. The
+   catalogue also performs **voicing completion**: when a near-full strum
+   is exactly one note short of exactly one known shape and the missing
+   note is an octave doubling sitting on two detected notes' harmonics at
+   once (spectrally unattributable — e.g. the B3 of an open E chord), it
+   is restored, marked as inferred and shown in parentheses in the tab.
 5. **Rendering** — ASCII tab (chord labels above the columns, column
    spacing proportional to the time until the next onset), per-event
    fretboard diagrams with note names on the grid, a whole-track fretboard
@@ -149,11 +157,14 @@ fretmap examples/output/rhythm.wav
 - **Octave doublings inside a strummed chord** (e.g. A2 and A3 in an open
   Am) share every harmonic with the lower note; the recovery pass brings
   them back when the spectral evidence is attributable, so full open-chord
-  voicings render with (almost) all their strings. Two honest gaps remain:
-  a doubling more than ~12 dB quieter than the rest of the strum may be
-  missed, and the B3 inside an open E-shape chord is unrecoverable in
-  principle (its fundamental sits 2 cents from E2's 3rd harmonic) — a full
-  six-string E or Em7 strum therefore tabs as five strings.
+  voicings render with all their strings. The B3 inside an open E-shape
+  chord is unrecoverable from the spectrum in principle (its fundamental
+  sits 2 cents from E2's 3rd harmonic *and* on B2's 2nd) — the chord-shape
+  catalogue restores it when the other five strings match a known shape,
+  shown parenthesized in the tab (e.g. `(0)`) because it is inferred from
+  fretboard knowledge rather than detected: the player may genuinely have
+  muted that string. One honest gap remains: a doubling more than ~12 dB
+  quieter than the rest of the strum may be missed.
 - `--lead` isolates the dominant melodic line by register tracking; it is
   a heuristic for two-guitar mixes, not full source separation.
 - Fretboard positions are inherently ambiguous on a guitar (the same pitch

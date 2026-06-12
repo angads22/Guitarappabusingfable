@@ -30,8 +30,9 @@ The whole app is a linear pipeline, orchestrated by `analyze()` in `fretmap/anal
 audio file → load_audio (audio.py)
            → detect_onsets via spectral flux (dsp.py)
            → per-segment polyphonic pitch detection (multipitch.py)
+           → catalogue voicing completion (shapes.py)
            → note/interval/chord classification (music.py)
-           → fretboard position assignment (fretboard.py)
+           → fretboard position assignment (fretboard.py, catalogue-aware)
            → ASCII tab / fretboard diagrams / JSON (render.py)
 ```
 
@@ -42,7 +43,8 @@ Key domain conventions:
 - Pitches are MIDI note numbers throughout; conversion helpers live in `music.py` (`name_to_midi`, `midi_to_name`) and `multipitch.py` (freq↔midi).
 - `analyze()` is two-pass: pass 1 detects pitches per segment (search range derived from the tuning); pass 2 estimates a global tuning offset (`estimate_tuning_offset`), re-rounds, drops still-ringing notes from previous events (`harmonic_rise` in `dsp.py`), then classifies and assigns positions.
 - `detect_pitches()` itself is greedy find-and-cancel plus a **hidden-note recovery/validation pass** (`_refine_polyphony`): octave/twelfth/double-octave doublings invisible to cancellation are recovered via envelope-excess evidence on a longer FFT; greedy notes sitting on another note's comb are re-validated. Per-note stiff-string stretch is fitted (`MAX_BETA`), and YIN arbitrates octaves on single notes. Set `FRETMAP_DEBUG=1` (or `=2` for per-harmonic traces) to debug recovery decisions.
-- Chord naming (`music.py`) uses `(required, optional)` pitch-class templates — the perfect 5th is optional on most qualities, so shells are named with a `" (no 5th)"` label suffix. Known waiver: B3 inside open E-shape voicings is physically unrecoverable (2 cents from 3×E2) — see `tests/test_voicing.py`.
+- Chord naming (`music.py`) uses `(required, optional)` pitch-class templates — the perfect 5th is optional on most qualities, so shells are named with a `" (no 5th)"` label suffix.
+- `shapes.py` is a self-validating catalogue of real guitar fingerings (CAGED opens, barres, shells, triads, drone shapes) as base shapes plus fret offsets; open strings stay fixed under transposition. It serves two purposes. (1) **Voicing completion** (`_complete_voicing` in `analyze.py`): B3 inside open E-shape voicings is physically unrecoverable from the spectrum (2 cents from both 3×E2 and 2×B2), so when ≥ 5 detected notes are exactly one note short of exactly one catalogue shape and the missing note is an octave doubling colliding with **two** distinct detected combs, it is added with `Event.inferred[i] = True` (rendered parenthesized, salience 0, joins ring-over suppression). Doublings on a *single* comb are recoverable by `_refine_polyphony`, so their absence blocks completion — don't weaken that gate. Curation rule (enforced by `tests/test_shapes.py`): shapes sounding ≥ 5 strings must use contiguous strings, or they exactly match "full strum minus the masked string" and silently disable completion. (2) **Idiomatic fingering**: `assign_positions` lets exact catalogue matches outbid the backtracker under the same cost function minus `IDIOM_BONUS`.
 - Tunings are tuples of open-string MIDI numbers, **low string first** (e.g. `STANDARD_TUNING = (40, 45, 50, 55, 59, 64)`); fretboard positions are `(string_index, fret)` with string 0 = lowest/thickest string.
 - `assign_positions` is stateful across events via a "hand position" float — single notes prefer staying near the current hand; chords are solved by backtracking for a playable shape (distinct strings, fret span ≤ 4).
 - The README's "How it works" section documents the DSP algorithms (spectral-flux onsets, harmonically weighted multi-F0 with harmonic cancellation, sub-octave guard); keep it in sync when changing `dsp.py`/`multipitch.py`.
