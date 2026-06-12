@@ -7,10 +7,12 @@ strings, limited fret span).
 """
 
 from fretmap.music import name_to_midi
+from fretmap.shapes import shape_positions
 
 STANDARD_TUNING = (40, 45, 50, 55, 59, 64)  # E2 A2 D3 G3 B3 E4
 DEFAULT_MAX_FRET = 24
 MAX_CHORD_SPAN = 4  # frets between lowest and highest fretted note
+IDIOM_BONUS = 0.75  # cost edge given to known catalogue fingerings
 
 
 def parse_tuning(spec: str) -> tuple[int, ...]:
@@ -96,6 +98,28 @@ def assign_positions(
         search(idx + 1, used, chosen)
 
     search(0, set(), [None] * len(midis))
+
+    # Idiomatic tie-break: when the pitch set is a known catalogue shape,
+    # prefer the fingering a guitarist would actually use unless the
+    # backtracker found something clearly cheaper.
+    if len(midis) >= 3:
+        by_pitch = sorted(range(len(midis)), key=lambda i: midis[i])
+        for shape in shape_positions(midis, tuning, max_fret):
+            frets = [f for _, f in shape]
+            strings = sorted(s for s, _ in shape)
+            gaps = sum(b - a - 1 for a, b in zip(strings, strings[1:]))
+            cost = (
+                _chord_cost(frets, hand)
+                + 0.35 * gaps
+                - len(shape) * 100.0
+                - IDIOM_BONUS
+            )
+            if cost < best[0]:
+                chosen: list[tuple[int, int] | None] = [None] * len(midis)
+                for i, pos in zip(by_pitch, shape):
+                    chosen[i] = pos
+                best = (cost, chosen)
+
     return best[1]
 
 

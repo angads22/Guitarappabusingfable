@@ -31,6 +31,14 @@ def test_chord_uses_distinct_strings_and_small_span():
     assert max(fretted) - min(fretted) <= 4
 
 
+def test_chord_prefers_idiomatic_shape():
+    # Known catalogue voicings map to the fingering a guitarist would use.
+    open_c = [name_to_midi(x) for x in ("C3", "E3", "G3", "C4", "E4")]
+    assert assign_positions(open_c) == [(1, 3), (2, 2), (3, 0), (4, 1), (5, 0)]
+    open_d = [name_to_midi(x) for x in ("D3", "A3", "D4", "F#4")]
+    assert assign_positions(open_d) == [(2, 0), (3, 2), (4, 3), (5, 2)]
+
+
 def test_out_of_range_note_dropped():
     [pos] = assign_positions([20])  # below low E
     assert pos is None
